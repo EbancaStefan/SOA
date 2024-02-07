@@ -1,0 +1,124 @@
+services:
+  spring-back-end:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      VIRTUAL_PORT: 80
+      VIRTUAL_HOST: springbackend.local
+    depends_on:
+      - mysql-container
+      - rabbitmq-container
+
+  spring-rabbit:
+    container_name: "spring-rabbit"
+    build:
+      context: ./rabbitmq
+      dockerfile: Dockerfile
+    environment:
+      VIRTUAL_PORT: 80
+      VIRTUAL_HOST: springbackend.local
+    depends_on:
+      - mysql-container
+      - rabbitmq-container
+
+  spring-kafka-consumer:
+    container_name: "spring-kafka-consumer"
+    build:
+      context: ./kafka
+      dockerfile: Dockerfile
+    environment:
+      VIRTUAL_PORT: 80
+      VIRTUAL_HOST: springbackend.local
+    depends_on:
+      - mysql-container
+
+  mysql-container:
+    image: mysql:8.3.0
+    container_name: 'mysql-container'
+    ports:
+      - 3306:3306
+    volumes:
+      - dbdata:/var/lib/mysql
+    environment:
+      MYSQL_DATABASE: book_management_system
+      MYSQL_ROOT_PASSWORD: root
+
+  rabbitmq-container:
+    image: rabbitmq:3.10.5-management
+    container_name: 'rabbitmq'
+    ports:
+      - 5672:5672
+      - 15672:15672
+    volumes:
+      - ~/.docker-conf/rabbitmq/data/:/var/lib/rabbitmq/
+      - ~/.docker-conf/rabbitmq/log/:/var/log/rabbitmq
+
+  loadbalancer:
+    image: nginx:latest
+    container_name: 'loadbalancer'
+    volumes:
+      - "./confd:/etc/nginx/conf.d"
+    ports:
+      - 80:80
+    environment:
+      DEFAULT_HOST: springbackend.local
+    depends_on:
+      - spring-back-end
+
+  zookeeper:
+    image: wurstmeister/zookeeper
+    container_name: 'zookeeper'
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: wurstmeister/kafka
+    container_name: 'kafka'
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_CREATE_TOPICS: "test_topic:1:1"
+      KAFKA_MESSAGE_MAX_BYTES: 2097152
+
+  frontend-1:
+    container_name: 'frontend-1'
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    depends_on:
+      - loadbalancer
+
+  frontend-2:
+    container_name: 'frontend-2'
+    build:
+      context: ../frontend2
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3000"
+    depends_on:
+      - loadbalancer
+
+  frontend-3:
+    container_name: 'frontend-3'
+    build:
+      context: ../frontend3
+      dockerfile: Dockerfile
+    ports:
+      - "3002:3000"
+    depends_on:
+      - loadbalancer
+
+volumes:
+  dbdata:
+
+networks:
+  rabbitmq_network:
+    driver: bridge
